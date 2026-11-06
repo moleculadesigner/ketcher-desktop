@@ -1,156 +1,193 @@
 # Ketcher Desktop
 
-Electron-обёртка для [Ketcher](https://github.com/epam/ketcher) — химического редактора структур.
-Шаг 1: окно, которое открывает Ketcher и ведёт себя как обычное приложение
-(иконка в Dock, своё имя, без адресной строки и вкладок).
+Нативная macOS-обёртка для [Ketcher](https://github.com/epam/ketcher) — химического редактора структур.
+Обычное приложение: своя иконка в Dock и Launchpad, своё имя, без адресной строки и вкладок.
+**Работает офлайн, без локального сервера** — Ketcher и Indigo (WASM) лежат внутри приложения.
 
 ![Ketcher в окне Electron](docs/screenshot.png)
 
 Текущие задачи и идеи — в [BACKLOG.md](BACKLOG.md).
 
-## Что уже работает
+## Как устроено
 
-- Окно 1280×900 с минимальными размерами, открывает `http://127.0.0.1:5173/` — dev-сервер Ketcher
-  из папки `ketcher/example`.
-- Если сервер не запущен — вместо серого экрана показывается подсказка `error.html`.
-- Внешние ссылки открываются в системном браузере, а не внутри приложения.
-- Адрес можно переопределить переменной окружения `KETCHER_URL`.
-
-## Как запустить
-
-Нужны **два терминала**.
-
-**Терминал 1 — сам Ketcher** (веб-часть, её отдаёт Vite dev-сервер):
-
-```sh
-cd ketcher/example
-npm run dev:standalone
-# ждём строку: VITE v8.x  ready ... http://127.0.0.1:5173/
+```
+┌────────────────────────────── app://bundle ──────────────────────────────┐
+│  renderer/  — наша веб-часть (React + ketcher-react из npm)              │
+│  Vite собирает её в renderer/dist → внутрь .app (asar)                   │
+└──────────────────────────────────────────────────────────────────────────┘
+                    ▲                                    
+                    │ протокол app:// (main.js)
+┌───────────────────┴──────────────────────────────────────────────────────┐
+│  main.js — главный процесс Electron: окно, меню, файлы, свой протокол    │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Терминал 2 — наше окно**:
+Два процесса, как в любом Electron-приложении:
+
+- **main** (`main.js`, Node.js) — создаёт окно, отдаёт статику из `renderer/dist`
+  через собственный протокол `app://`, а в будущем будет открывать/сохранять файлы.
+- **renderer** (React + Chromium) — рисует интерфейс Ketcher.
+
+Зачем протокол `app://`, а не `file://`? Браузер запрещает загружать ES-модули и
+Web Worker'ы с `file://` (считает их «чужим происхождением»). `app://bundle/...`
+выглядит для Chromium как обычный сайт — и модули, и Worker с WASM работают штатно.
+Регистрация — в начале [main.js](main.js), обработчик — `registerAppProtocol()`.
+
+## Быстрый старт
 
 ```sh
-npm start
+npm install          # один раз
+npm start            # соберёт renderer и откроет приложение
 ```
 
-Открывается окно Electron, внутри — Ketcher. Закрыли окно — процесс завершился.
+Сборки занимают ~2 секунды, `prestart` запускает её автоматически, так что
+`npm start` всегда запускает актуальную версию.
 
-> Почему два процесса? Ketcher — это веб-приложение (HTML/CSS/JS + WASM).
-> Vite — «веб-сервер + сборщик» для него, Electron — браузер в отдельном окне.
-> Так сделано, чтобы во время разработки работал hot reload: поменяли код Ketcher —
-> окно обновилось само, без перезапуска Electron.
+## Команды
 
-### Полезные переменные
-
-| Переменная | Что делает |
+| Команда | Что делает |
 | --- | --- |
-| `KETCHER_URL` | какой адрес открыть в окне (по умолчанию `http://127.0.0.1:5173/`) |
-| `KETCHER_DEVTOOLS` | `KETCHER_DEVTOOLS=1 npm start` — открыть DevTools (консоль, инспектор DOM) |
+| `npm start` | собрать веб-часть и открыть приложение |
+| `npm run build:renderer` | только собрать бандл в `renderer/dist` |
+| `npm run dev:renderer` | dev-сервер нашей веб-части с hot reload (порт 5190) |
+| `npm run dist` | собрать `.app` + `.dmg` + `.zip` в `release/` |
+| `npm run ketcher:dev` | dev-сервер Ketcher из локального клона `ketcher/` |
+| `npm run icon` | пересобрать `build/icon.png` из `build/icon.svg` (нужен Inkscape) |
 
-Пример: `KETCHER_URL=http://127.0.0.1:4002 npm start`
+## Два режима работы
 
-## Структура проекта
+**1. Обычный запуск (по умолчанию).** Ketcher берётся из npm-пакетов
+`ketcher-react` / `ketcher-standalone` и уже вшит в приложение. Сеть и сервер не нужны.
+
+**2. Разработка самого Ketcher.** Если в `ketcher/` вы правите исходники апстрима,
+запустите его dev-сервер и укажите на него Electron:
+
+```sh
+# терминал 1
+npm run ketcher:dev
+
+# терминал 2
+KETCHER_URL=http://127.0.0.1:5173/ npm start
+```
+
+В этом режиме Electron открывает dev-сервер вместо встроенного бандла — работает
+hot reload. Переменными `KETCHER_URL` и `KETCHER_DEVTOOLS=1` удобно пользоваться
+и при отладке нашей веб-части через `npm run dev:renderer`.
+
+> **Важно:** пакеты в npm отстают от master. Сейчас в npm `3.18.0`,
+> а в локальном клоне `ketcher/` — `3.20.0`. Если нужна свежая версия Ketcher,
+> это повод перейти на режим 2 (или собрать пакеты локально).
+
+## Сборка приложения
+
+```sh
+npm run dist
+```
+
+Результат в `release/`:
+
+- `mac-arm64/Ketcher Desktop.app` — само приложение;
+- `Ketcher Desktop-0.1.0-arm64.dmg` — установщик (перетащить в Applications);
+- `Ketcher Desktop-0.1.0-arm64-mac.zip` — для обновлений/раздачи.
+
+Установка «как обычное приложение»: перетащить `.app` в `/Applications`
+(или `cp -R "release/mac-arm64/Ketcher Desktop.app" /Applications/`), затем
+`open -a "Ketcher Desktop"`. После этого иконка появляется в Launchpad и Dock.
+
+Сборка **не подписана** (`mac.identity: null` в [package.json](package.json)):
+для личного использования этого достаточно. Для раздачи другим людям нужен
+Apple Developer ID и нотаризация, иначе Gatekeeper будет ругаться.
+
+### Иконка
+
+Цепочка такая:
+
+```
+build/icon.svg  ──npm run icon──▶  build/icon.png  ──npm run dist──▶  .app/Contents/Resources/icon.icns
+   (исходник)                      (1024×1024)                        (набор 16…1024 для Retina)
+```
+
+- [build/icon.svg](build/icon.svg) — исходник, его и правим.
+- [build/icon.png](build/icon.png) — растр, который делает `npm run icon`
+  ([scripts/make-icon.mjs](scripts/make-icon.mjs)).
+- `icon.icns` electron-builder собирает сам: в [package.json](package.json) поле
+  `build.mac.icon` указывает на PNG, а `build.directories.buildResources` — на папку `build/`.
+  В `.app` прописывается `CFBundleIconFile = icon.icns` в `Info.plist`.
+
+**Рендерит Inkscape, а не resvg.** В иконке используются mesh-градиенты (SVG 2,
+теги `<meshgradient>` / `<meshpatch>`), которые resvg не поддерживает — он молча
+пропускает их, и получается почти пустая картинка. Inkscape же понимает mesh
+нативно. Скрипт ищет его в `PATH`, `/opt/homebrew/bin`, `/Applications/Inkscape.app`
+(или берёт путь из `INKSCAPE=...`), а если не нашёл — падает обратно на resvg
+и предупреждает, что градиенты потеряются.
+
+Порядок замены иконки: правим SVG → `npm run icon` → `npm run dist` → переустановить `.app`.
+PNG можно нарисовать и сразу в 1024×1024 (тогда шаг `npm run icon` не нужен),
+но SVG удобнее: одна правка — и все размеры пересобраны.
+
+> Если в SVG попал `<script>` (например, `mesh_polyfill` от инструмента, которым
+> рисовали) — на сборку он не влияет, Inkscape скрипты не выполняет. Но в файле
+> иконки он не нужен: это лишние килобайты и исполняемый код в ассете.
+
+## Структура
 
 ```
 ketcher-desktop/
-├── package.json     # описание проекта: имя, точка входа (main.js), скрипты, зависимости
-├── main.js          # ГЛАВНЫЙ процесс: создаёт окно, грузит в него Ketcher
-├── error.html       # страница-подсказка, если Ketcher не запущен
-├── ketcher/         # исходники Ketcher (клон репозитория epam/ketcher)
-└── node_modules/    # сюда npm складывает зависимости (в git не попадает)
+├── main.js                 # главный процесс: окно, протокол app://, меню
+├── error.html              # подсказка, если приложение не смогло загрузиться
+├── renderer/               # наша веб-часть
+│   ├── index.html
+│   ├── vite.config.js      # сборка в renderer/dist
+│   └── src/main.jsx        # React: <Editor> из ketcher-react + standalone Indigo
+├── build/icon.svg|png      # иконка приложения
+├── ketcher/                # локальный клон апстрима (только для режима разработки)
+├── release/                # результат npm run dist (в git не попадает)
+└── docs/                   # скриншоты
 ```
 
-## Как это устроено (мини-ликбез по JS/Node)
+## Как это работает внутри (для тех, кто учит JS/Node)
 
-Electron — это два вида процессов:
+- `require('electron')` — аналог `import` в Python. Из модуля достаём `app`
+  (жизненный цикл), `BrowserWindow` (окно), `protocol` (свои схемы URL).
+- `app.whenReady().then(...)` — аналог `await` для события «Electron готов»:
+  окна можно создавать только после него.
+- `protocol.handle('app', ...)` — мы сами решаем, что отдать на `app://bundle/...`.
+  Читаем файл из `renderer/dist` и возвращаем `Response` с правильным `Content-Type`
+  (без него Chromium не выполнит `.js` как модуль).
+- `webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true }` —
+  страница не имеет доступа к Node.js. Это правильный дефолт; когда понадобятся
+  файловые диалоги, общение пойдёт через `preload.js` + IPC, а не напрямую.
+- В `renderer/src/main.jsx` мы кладём экземпляр Ketcher в `window.ketcher` —
+  так до его API сможет дотянуться главный процесс (например, для хоткея
+  «скопировать выделение как SMILES» из бэклога).
 
-```
-            main.js (Node.js)                 renderer (Chromium)
-    ┌──────────────────────────────┐   ┌──────────────────────────────┐
-    │ создаёт окна, меню, трей     │   │ рисует интерфейс:            │
-    │ работает с файлами, ОС       │──▶│ HTML + CSS + JS (тут Ketcher)│
-    │ НЕ рисует интерфейс          │   │ НЕТ прямого доступа к Node   │
-    └──────────────────────────────┘   └──────────────────────────────┘
-                    ▲                                  │
-                    └──────── preload.js + IPC ────────┘
-                              (следующий шаг)
-```
+### Две неочевидные правки в сборке
 
-Сейчас `preload.js` не нужен: окно только показывает сайт и ничего не просит у main.
-Когда захотите открывать/сохранять `.ket`/`.mol` файлы на диске — понадобится.
+Обе — в [renderer/vite.config.js](renderer/vite.config.js), обе нужны именно
+из-за Ketcher:
 
-### Разбор `main.js` по строкам
-
-```js
-const { app, BrowserWindow, shell } = require('electron');
-```
-
-`require` — аналог `import` в Python. Достаём из модуля `electron` три объекта:
-`app` (само приложение, жизненный цикл), `BrowserWindow` (класс окна),
-`shell` (утилиты ОС, например «открой эту ссылку в браузере»).
-
-```js
-const KETCHER_URL = process.env.KETCHER_URL || 'http://127.0.0.1:5173/';
-```
-
-`process.env` — переменные окружения (как `os.environ` в Python).
-`a || b` — «a, а если пусто/undefined — то b».
-
-```js
-const win = new BrowserWindow({ width: 1280, height: 900, ... });
-win.loadURL(KETCHER_URL);
-```
-
-Создали окно и сказали загрузить в него адрес. Всё остальное в объекте —
-настройки: `webPreferences` отвечает за безопасность renderer'а
-(мы явно выключаем доступ к Node из страницы — так правильно).
-
-```js
-win.once('ready-to-show', () => win.show());
-```
-
-`on` / `once` — подписка на события, как сигналы в Qt. Окно создаётся скрытым
-(`show: false`) и показывается, когда страница отрисовалась — без белой вспышки.
-
-```js
-app.whenReady().then(() => { createWindow(); });
-```
-
-`whenReady()` возвращает промис (аналог `asyncio.Future`/`await`), `.then(...)` —
-«когда Electron будет готов, вызови эту функцию». Стрелка `() => { ... }` —
-лямбда-функция, как `lambda` в Python.
-
-```js
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-```
-
-На macOS приложение не принято закрывать при закрытии всех окон (как Safari).
-
-### Что почитать
-
-- [Electron: Quick Start](https://www.electronjs.org/docs/latest/tutorial/quick-start)
-- [Electron: Process Model](https://www.electronjs.org/docs/latest/tutorial/process-model) — как раз про main/renderer
-- [MDN: JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript) — если хочется разобраться в синтаксисе
-
-## Что дальше (по возрастанию сложности)
-
-1. **Офлайн-режим**: собрать Ketcher (`npm run build:standalone` в `example`)
-   и отдавать готовые файлы из самого приложения через свой протокол,
-   чтобы dev-сервер не требовался.
-2. **Файлы на диске**: `preload.js` + `ipcMain`/`ipcRenderer` + `dialog.showOpenDialog`
-   — открывать `.ket`, `.mol`, `.sdf` с диска и сохранять обратно. Это главное,
-   ради чего вообще делают десктопную обёртку.
-3. **Меню приложения**: свои пункты («Открыть…», «Сохранить как…») вместо стандартных.
-4. **Сборка `.app`/`.exe`**: `electron-builder` или `@electron-forge/cli`.
+- `resolve.alias.events` — Ketcher использует Node-модуль `events` (`EventEmitter`).
+  В браузере его нет, и Vite подставляет заглушку, на которой приложение падает
+  с `EventEmitter is not a constructor`. Поэтому подключён браузерный полифил
+  из пакета `events`.
+- `define.global` — часть кода Ketcher рассчитывает на Node-глобал `global`.
+  Апстримный пример для этого вставляет `var global = global || window`;
+  здесь то же самое делается на этапе сборки.
 
 ## Траблшутинг
 
-- **Окно с подсказкой вместо Ketcher** — не запущен dev-сервер (`npm run dev:standalone`
-  в `ketcher/example`) или он слушает другой порт. Проверьте адрес в `KETCHER_URL`.
-- **Порт 5173 занят** — Vite возьмёт 5174 и напишет это в консоли.
-  Тогда: `KETCHER_URL=http://127.0.0.1:5174/ npm start`.
-- **Пустое окно, ошибок нет** — запустите с DevTools: `KETCHER_DEVTOOLS=1 npm start`
-  и посмотрите консоль.
+- **Пустое окно / окно с подсказкой** — запустите `KETCHER_DEVTOOLS=1 npm start`
+  и посмотрите консоль. Если был задан `KETCHER_URL`, проверьте, что сервер жив.
+- **`Emoji ... is not a constructor` / `global is not defined`** — кто-то удалил
+  шимы из `renderer/vite.config.js`; верните их.
+- **Порт 5173 занят** — Vite возьмёт 5174 и напишет это в консоли;
+  тогда `KETCHER_URL=http://127.0.0.1:5174/ npm start`.
+- **Приложение не появляется в Launchpad** — проверьте, что `.app` лежит
+  в `/Applications`, и обновите базу Launch Services:
+  `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Ketcher Desktop.app"`.
+
+## Что дальше
+
+- Хоткей «копировать выделение как SMILES» на уровне Electron (см. бэклог).
+- Открытие/сохранение `.ket`/`.mol`/`.sdf` через `preload.js` + IPC.
+- Своё меню приложения вместо стандартного.

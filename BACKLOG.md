@@ -18,10 +18,14 @@
 
 ### Текущее состояние
 
-Уже реализовано в форке — коммит `adcf049f55` («feat(ketcher-react): copy selection as SMILES via Mod+Shift+S»),
+Реализовано в форке — коммит `adcf049f55` («feat(ketcher-react): copy selection as SMILES via Mod+Shift+S»),
 файлы [`copyAs.js`](ketcher/packages/ketcher-react/src/script/ui/action/copyAs.js) и
 [`action/index.ts`](ketcher/packages/ketcher-react/src/script/ui/action/index.ts).
 Логика оттуда, которую надо повторить: `editor.structSelected()` → `ketcher.indigo.convert(struct, { outputFormat: ChemicalMimeType.DaylightSmiles })` → `navigator.clipboard.writeText`.
+
+Теперь нам это проще, чем в форке: своя страница (`renderer/src/main.jsx`) уже кладёт
+Ketcher в `window.ketcher` в `onInit`, а приложение работает из встроенного бандла,
+поэтому правки в `ketcher/` не нужны вообще.
 
 ### План
 
@@ -123,8 +127,19 @@ if (smiles) clipboard.writeText(smiles);
 
 ---
 
+## Сделано
+
+- **Офлайн-режим без dev-сервера.** Ketcher и Indigo (WASM) собираются в бандл
+  (`renderer/dist`) и отдаются приложению через собственный протокол `app://`.
+  Проверено: `setMolecule('c1ccccc1O')` → `getSmiles()` возвращает `c1c(O)cccc1`
+  без сети. Подробности — в [README.md](README.md#как-устроено).
+- **Нативный `.app`: имя, иконка, Launchpad.** `npm run dist` собирает
+  `Ketcher Desktop.app` (bundle id `com.moleculadesigner.ketcherdesktop`,
+  иконка из [build/icon.svg](build/icon.svg)) и `.dmg`. Установлено в `/Applications`
+  и запускается через LaunchServices.
+
 ## Идеи без приоритета
 
-- Офлайн-режим: сборка Ketcher и раздача статики из приложения, без dev-сервера.
-- Своё меню и иконка в Dock (сейчас приложение называется «Electron»).
+- Своё меню приложения (сейчас стандартное Electron-меню).
 - Открытие/сохранение `.ket`/`.mol`/`.sdf` через `preload` + IPC.
+- Подпись и нотаризация, если приложение когда-нибудь пойдёт «в люди».
