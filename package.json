@@ -1,0 +1,15 @@
+{
+  "name": "ketcher-desktop",
+  "productName": "Ketcher Desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron-обёртка для Ketcher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "ketcher:dev": "npm --prefix ketcher/example run dev:standalone"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3"
+  }
+}

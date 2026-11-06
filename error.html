@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ketcher Desktop — не удалось открыть страницу</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f5f7fa;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: #1f2933;
+      }
+      .card {
+        max-width: 640px;
+        padding: 40px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 22px;
+      }
+      p {
+        margin: 0 0 16px;
+        line-height: 1.55;
+      }
+      code {
+        padding: 2px 6px;
+        background: #eef2f7;
+        border-radius: 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+      pre {
+        padding: 14px 16px;
+        background: #1f2933;
+        color: #e4e7eb;
+        border-radius: 10px;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      a.button {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 10px 18px;
+        border-radius: 10px;
+        background: #2563eb;
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      a.button:hover {
+        background: #1d4ed8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Ketcher не загрузился</h1>
+      <p>
+        Приложение ожидает, что редактор запущен по адресу
+        <code id="target">http://127.0.0.1:5173/</code>.
+      </p>
+      <p>Запустите dev-сервер Ketcher во втором терминале:</p>
+      <pre>cd ketcher/example
+npm run dev:standalone</pre>
+      <p>Дождитесь сообщения <code>VITE ... ready</code>, затем нажмите кнопку ниже.</p>
+      <a class="button" id="retry" href="http://127.0.0.1:5173/">Повторить</a>
+    </div>
+    <script>
+      // Адрес приходит из main.js в query-параметре (?url=...).
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get('url');
+      if (url) {
+        document.getElementById('target').textContent = url;
+        document.getElementById('retry').href = url;
+      }
+    </script>
+  </body>
+</html>
