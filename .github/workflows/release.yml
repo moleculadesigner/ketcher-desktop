@@ -1,0 +1,103 @@
+name: Release
+
+# Собираем .dmg и выкладываем в GitHub Releases.
+#
+# Как выпустить версию:
+#   1. поднять версию:  npm version 0.2.0 --no-git-tag-version
+#   2. закоммитить package.json и package-lock.json
+#   3. поставить тег и запушить его:  git tag v0.2.0 && git push origin v0.2.0
+# Workflow сам проверит, что тег совпадает с версией, соберёт dmg и создаст релиз.
+#
+# Кнопка «Run workflow» в Actions собирает dmg без публикации (артефакт для проверки).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # нужно, чтобы создать релиз и залить файлы
+
+jobs:
+  release:
+    # macos-15 — Apple Silicon (arm64). Для Intel-сборки нужен macos-13
+    # и флаг --x64 (см. README).
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Проверить, что тег совпадает с версией в package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Тег $GITHUB_REF_NAME не совпадает с версией v$VERSION в package.json"
+            exit 1
+          fi
+
+      # Electron и electron-builder скачивают бинарники (~150 МБ).
+      # Кэш ставим ДО npm ci, иначе первый запуск качает одно и то же дважды.
+      - name: Кэш Electron
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+
+      - name: Зависимости
+        run: npm ci
+        env:
+          # Бинарник Electron для npm не нужен: electron-builder качает свой
+          # для упаковки. Это экономит ~100 МБ загрузки на каждом запуске.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Сборка dmg
+        run: |
+          npm run build:renderer
+          npx electron-builder --mac --arm64 --publish never
+
+      - name: Что получилось
+        run: ls -lh release
+
+      - name: Артефакт (доступен даже без релиза)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ketcher-desktop-dmg
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+
+      - name: Опубликовать релиз
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            release/*.zip
+          body: |
+            ## Установка
+
+            1. Скачайте `.dmg` ниже и откройте его.
+            2. Перетащите **Ketcher Desktop** в папку «Программы».
+            3. Запустите из Launchpad.
+
+            Сборка **не подписана** (нет Apple Developer ID), поэтому Gatekeeper
+            может сказать, что приложение повреждено. Это ожидаемо; лечится так:
+
+            ```sh
+            xattr -dr com.apple.quarantine "/Applications/Ketcher Desktop.app"
+            open -a "Ketcher Desktop"
+            ```
+
+            Приложение работает офлайн: Ketcher и Indigo (WASM) внутри, сеть не нужна.

@@ -115,6 +115,54 @@ npm run install:app
 для личного использования этого достаточно. Для раздачи другим людям нужен
 Apple Developer ID и нотаризация, иначе Gatekeeper будет ругаться.
 
+## CI и релизы
+
+Два workflow в [.github/workflows](.github/workflows):
+
+| Файл | Когда | Что делает |
+| --- | --- | --- |
+| [ci.yml](.github/workflows/ci.yml) | каждый PR и пуш в `main` | `npm ci` + сборка веб-части: проверяет, что проект вообще собирается |
+| [release.yml](.github/workflows/release.yml) | пуш тега `v*` | собирает `.dmg` и `.zip` на macOS-раннере и создаёт GitHub Release с этими файлами |
+
+### Как выпустить версию
+
+```sh
+npm version 0.2.0 --no-git-tag-version   # поднять версию в package.json
+npm run install:app                      # опционально: проверить локально
+git add package.json package-lock.json
+git commit -m "release: 0.2.0"
+git push
+git tag v0.2.0
+git push origin v0.2.0                   # ← это запускает release.yml
+```
+
+Дальше само: раннер ставит зависимости, собирает приложение, заливает
+`.dmg` и `.zip` в Releases страницы репозитория.
+
+Важные детали workflow:
+
+- **Тег должен совпадать с версией** в `package.json`, иначе job падает на первом шаге —
+  чтобы в релизе `v0.2.0` не оказался бандл версии `0.1.0`.
+- Сборка идёт на `macos-15` (Apple Silicon, `--arm64`). Для Intel-сборки нужен
+  раннер `macos-13` и флаг `--x64`; для универсальной — `--universal`.
+- Кэш `~/Library/Caches/electron*` ставится **до** `npm ci`, а сам `npm ci` идёт с
+  `ELECTRON_SKIP_BINARY_DOWNLOAD=1`: бинарник Electron для npm не нужен,
+  electron-builder качает свой экземпляр для упаковки.
+- Кнопка **Run workflow** в Actions собирает `.dmg` без публикации релиза —
+  удобно проверять изменения, не трогая теги. Файл лежит в артефактах запуска.
+- Сборка не подписана, поэтому в тело релиза автоматически подставляется
+  инструкция про `xattr -dr com.apple.quarantine` — иначе у скачавших
+  macOS скажет «приложение повреждено».
+
+> Workflow должен быть в том коммите, на который ставится тег. Поэтому файлы
+> `.github/workflows/*` коммитим и пушим **до** `git tag`.
+
+### Почему CI не нужен `ketcher/`
+
+Папка `ketcher/` — локальный клон апстрима, она в `.gitignore`. CI собирает
+приложение из npm-пакетов `ketcher-react` / `ketcher-standalone`, так что
+локальная разработка форка и релизная сборка друг от друга не зависят.
+
 ### Иконка
 
 Цепочка такая:

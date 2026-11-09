@@ -1,0 +1,31 @@
+name: Build check
+
+# Быстрая проверка на каждый PR и пуш в main: приложение вообще собирается.
+# Тяжёлую упаковку в dmg здесь не делаем — этим занимается release.yml.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Сборка веб-части
+        run: npm run build:renderer
+
+      - name: Бандл не пустой
+        run: |
+          test -f renderer/dist/index.html
+          ls -lh renderer/dist/assets
