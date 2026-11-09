@@ -67,7 +67,25 @@ jobs:
       - name: Сборка dmg
         run: |
           npm run build:renderer
-          npx electron-builder --mac --arm64 --publish never
+
+          # electron-builder лениво докачивает свои бинарники (7zip, dmgbuild) с
+          # GitHub Releases, а тот иногда отвечает 504 Gateway Time-out. Одна
+          # неудачная загрузка роняет всю сборку, хотя сам dmg уже собран.
+          # Поэтому повторяем попытку целиком: скачанное кэшируется и второй раз
+          # не грузится, так что повтор стоит секунды, а не две минуты.
+          for attempt in 1 2 3; do
+            echo "::group::electron-builder, попытка $attempt"
+            if npx electron-builder --mac --arm64 --publish never; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "::warning::Попытка $attempt не удалась — повтор через 20 секунд"
+            sleep 20
+          done
+
+          echo "::error::Сборка не удалась после 3 попыток"
+          exit 1
 
       - name: Что получилось
         run: ls -lh release
