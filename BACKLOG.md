@@ -6,71 +6,7 @@
 
 ---
 
-## 1. Копировать выделение как SMILES по хоткею — на уровне Electron
-
-**Статус:** идея · **Приоритет:** высокий · **Область:** `ketcher-desktop`, без правок в `ketcher/`
-
-### Зачем
-
-В Marvin привычный жест: выделил фрагмент → `Cmd+Shift+S` → в буфере SMILES.
-Хочется так же, но **не поддерживая форк Ketcher**: хоткей должен жить в Electron-обёртке,
-а `ketcher/` оставаться чистым апстримом (его можно `git pull` без конфликтов).
-
-### Текущее состояние
-
-Реализовано в форке — коммит `adcf049f55` («feat(ketcher-react): copy selection as SMILES via Mod+Shift+S»),
-файлы [`copyAs.js`](ketcher/packages/ketcher-react/src/script/ui/action/copyAs.js) и
-[`action/index.ts`](ketcher/packages/ketcher-react/src/script/ui/action/index.ts).
-Логика оттуда, которую надо повторить: `editor.structSelected()` → `ketcher.indigo.convert(struct, { outputFormat: ChemicalMimeType.DaylightSmiles })` → `navigator.clipboard.writeText`.
-
-Теперь нам это проще, чем в форке: своя страница (`renderer/src/main.jsx`) уже кладёт
-Ketcher в `window.ketcher` в `onInit`, а приложение работает из встроенного бандла,
-поэтому правки в `ketcher/` не нужны вообще.
-
-### План
-
-1. Пункт меню `Copy selection as SMILES` с accelerator `CommandOrControl+Shift+S`
-   (меню — единственное место, где Electron-акселераторы работают надёжно; `globalShortcut` не подходит — он системный).
-2. Обработчик в main-процессе: `win.webContents.executeJavaScript(...)` — выполняем в странице то же,
-   что делал форк, но через публичный `window.ketcher` (его выставляет
-   [`App.tsx`](ketcher/example/src/App.tsx#L42) в `onInit`; это апстримный код, менять не нужно).
-3. Строку SMILES возвращаем из `executeJavaScript` в main и пишем в буфер через `clipboard.writeText` —
-   так не зависим от прав на `navigator.clipboard` в renderer.
-
-Черновик (проверить API на живой структуре):
-
-```js
-// main.js
-const smiles = await win.webContents.executeJavaScript(`(async () => {
-  const k = window.ketcher;
-  const struct = k?.editor?.structSelected?.();
-  if (!struct || !struct.atoms.size) return null;
-  const { struct: s } = await k.indigo.convert(struct, {
-    outputFormat: 'chemical/x-daylight-smiles',
-  });
-  return s.trim();
-})()`);
-if (smiles) clipboard.writeText(smiles);
-```
-
-### Подводные камни
-
-- `window.ketcher` появится только после `onInit` — до этого `executeJavaScript` вернёт `null`. Нормально для хоткея.
-- Конвертация идёт через Indigo (WASM), поэтому асинхронная: в `executeJavaScript` нужен `Promise`.
-- Indigo ругается на стрелки, R-группы и часть query-структур — ошибку надо показать пользователю, а не глотать.
-- Хоткей должен молча ничего не делать при пустом выделении (или коротко мигнуть — решить по ощущениям).
-- Проверить, что `Cmd+Shift+S` не перехватывается самим Ketcher (в апстриме такого акселератора нет).
-
-### Критерии готовности
-
-- [ ] Выделил фрагмент → `Cmd+Shift+S` → в буфере SMILES именно выделения, не всей структуры
-- [ ] Без выделения — ничего не копирует и не падает
-- [ ] `git status` в `ketcher/` чистый
-- [ ] Работает и при загрузке со страницы апстрима (`ketcher/example`), и позже — со своей страницей
-
----
-
-## 2. WYSIWYG-экспорт картинки: звёздочки и any-связи превращаются в SMARTS, алиасы пропадают
+## 1. WYSIWYG-экспорт картинки: звёздочки и any-связи превращаются в SMARTS, алиасы пропадают
 
 **Статус:** идея · **Приоритет:** высокий · **Область:** `ketcher` (upstream-проблема)
 
@@ -129,6 +65,17 @@ if (smiles) clipboard.writeText(smiles);
 
 ## Сделано
 
+- **Copy Selection as SMILES** — меню `Structure → Copy Selection as SMILES`,
+  хоткей `Cmd+Shift+S`. Копирует выделение как Daylight SMILES через Indigo,
+  пишет в буфер из main-процесса. Проверено: `CCO` → в буфере `CCO`,
+  при пустом выделении буфер не меняется. Код: [main/commands/copy-smiles.js](main/commands/copy-smiles.js).
+  Пока без визуальной обратной связи при пустом выделении (только лог) —
+  если окажется неочевидным, добавить уведомление.
+- **Модульная структура main-процесса.** `main.js` — только инициализация;
+  окно, протокол, меню и команды разложены в [main/](main). Правило для новых фич:
+  новый файл в `main/commands/` + пункт меню в `main/menu.js`.
+- **Своё меню приложения** с акселераторами и стандартными ролями
+  (Edit/View/Window), чтобы `Cmd+C`/`Cmd+V` продолжали работать в полях ввода.
 - **Офлайн-режим без dev-сервера.** Ketcher и Indigo (WASM) собираются в бандл
   (`renderer/dist`) и отдаются приложению через собственный протокол `app://`.
   Проверено: `setMolecule('c1ccccc1O')` → `getSmiles()` возвращает `c1c(O)cccc1`
@@ -140,6 +87,5 @@ if (smiles) clipboard.writeText(smiles);
 
 ## Идеи без приоритета
 
-- Своё меню приложения (сейчас стандартное Electron-меню).
 - Открытие/сохранение `.ket`/`.mol`/`.sdf` через `preload` + IPC.
 - Подпись и нотаризация, если приложение когда-нибудь пойдёт «в люди».

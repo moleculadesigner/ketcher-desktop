@@ -24,6 +24,7 @@
     },
     "files": [
       "main.js",
+      "main/**/*",
       "error.html",
       "renderer/dist/**/*",
       "package.json"

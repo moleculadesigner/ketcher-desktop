@@ -213,7 +213,13 @@ PNG можно нарисовать и сразу в 1024×1024 (тогда ша
 
 ```
 ketcher-desktop/
-├── main.js                 # главный процесс: окно, протокол app://, меню
+├── main.js                 # точка входа main-процесса: инициализация и жизненный цикл
+├── main/                   # модули main-процесса
+│   ├── protocol.js         #   протокол app:// → файлы renderer/dist
+│   ├── window.js           #   окно, загрузка, ошибки, внешние ссылки
+│   ├── menu.js             #   меню приложения и горячие клавиши
+│   └── commands/           #   команды, вызываемые из меню
+│       └── copy-smiles.js  #     Copy Selection as SMILES
 ├── error.html              # подсказка, если приложение не смогло загрузиться
 ├── renderer/               # наша веб-часть
 │   ├── index.html
@@ -224,6 +230,44 @@ ketcher-desktop/
 ├── release/                # результат npm run dist (в git не попадает)
 └── docs/                   # скриншоты
 ```
+
+`main.js` намеренно тонкий: он только вызывает модули в правильном порядке.
+Детали живут в `main/`, поэтому новая фича не превращает точку входа в свалку.
+
+## Команды и меню
+
+Меню **Structure → Copy Selection as SMILES** (`Cmd+Shift+S`) копирует выделенный
+фрагмент в буфер обмена как SMILES — как в Marvin. Без выделения команда ничего
+не делает и буфер не трогает.
+
+Как это устроено: в main-процессе нет химии, он просит страницу посчитать.
+
+```
+main/commands/copy-smiles.js
+   │ executeJavaScript(...)          ← код выполняется в renderer
+   ▼
+renderer: window.ketcher.editor.structSelected()
+          window.ketcher.indigo.convert(struct, { outputFormat: 'chemical/x-daylight-smiles' })
+   │ return smiles
+   ▼
+main: clipboard.writeText(smiles)   ← запись в системный буфер из main
+```
+
+Почему так, а не через `navigator.clipboard` в странице: буфер пишется из main-процесса,
+поэтому не зависит от прав и фокуса окна. А сам хоткей живёт в меню, потому что
+в Electron акселераторы надёжно работают только через меню (`globalShortcut`
+перехватывал бы клавиши во всей системе).
+
+В меню включены стандартные роли (`editMenu`, `viewMenu`, `windowMenu`): без них
+перестали бы работать `Cmd+C` / `Cmd+V` / `Cmd+Z` в полях ввода внутри диалогов Ketcher.
+
+### Как добавить новую команду
+
+1. `main/commands/my-command.js` — экспортировать `async function myCommand(win)`.
+2. В `main/menu.js` добавить пункт с `id`, `label`, `accelerator` и `click`,
+   который берёт активное окно через `activeWindow()` и вызывает команду.
+3. Если команде нужно что-то из страницы — `win.webContents.executeJavaScript(...)`,
+   как в `copy-smiles.js`; если нужен Node (файлы, диалоги) — это уже в main.
 
 ## Как это работает внутри (для тех, кто учит JS/Node)
 
