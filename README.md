@@ -51,6 +51,7 @@ npm start            # соберёт renderer и откроет приложе�
 | `npm run build:renderer` | только собрать бандл в `renderer/dist` |
 | `npm run dev:renderer` | dev-сервер нашей веб-части с hot reload (порт 5190) |
 | `npm run dist` | собрать `.app` + `.dmg` + `.zip` в `release/` |
+| `npm run install:app` | собрать и поставить в `/Applications`, убрав дубль из `release/` |
 | `npm run ketcher:dev` | dev-сервер Ketcher из локального клона `ketcher/` |
 | `npm run icon` | пересобрать `build/icon.png` из `build/icon.svg` (нужен Inkscape) |
 
@@ -90,9 +91,25 @@ npm run dist
 - `Ketcher Desktop-0.1.0-arm64.dmg` — установщик (перетащить в Applications);
 - `Ketcher Desktop-0.1.0-arm64-mac.zip` — для обновлений/раздачи.
 
-Установка «как обычное приложение»: перетащить `.app` в `/Applications`
-(или `cp -R "release/mac-arm64/Ketcher Desktop.app" /Applications/`), затем
-`open -a "Ketcher Desktop"`. После этого иконка появляется в Launchpad и Dock.
+Установка «как обычное приложение» — одной командой:
+
+```sh
+npm run install:app
+```
+
+Она собирает бандл, копирует `.app` в `/Applications` через `ditto`
+(сохраняет права и xattr), регистрирует его в Launch Services и **удаляет
+промежуточную копию** `release/mac-arm64/`. Иконка после этого есть в Dock и Launchpad.
+
+Почему удалять копию обязательно: Spotlight (а значит и Raycast/Alfred, и поиск
+в Launchpad) индексирует **любой** `.app` на диске, не только в `/Applications`.
+Если оставить `release/mac-arm64/Ketcher Desktop.app`, в поиске будет две
+одинаковые программы. Маркер `.metadata_never_index` в этом случае не помогает —
+проверено, пересобранный `.app` всё равно попадает в индекс. `.dmg` и `.zip`
+в `release/` остаются: они не бандлы приложений и в поиске не мешают.
+
+Если всё же собрали через `npm run dist` и видите дубль — удалите папку
+`release/mac-arm64/` (или переустановите через `npm run install:app`).
 
 Сборка **не подписана** (`mac.identity: null` в [package.json](package.json)):
 для личного использования этого достаточно. Для раздачи другим людям нужен
@@ -121,13 +138,15 @@ build/icon.svg  ──npm run icon──▶  build/icon.png  ──npm run dist�
 (или берёт путь из `INKSCAPE=...`), а если не нашёл — падает обратно на resvg
 и предупреждает, что градиенты потеряются.
 
-Порядок замены иконки: правим SVG → `npm run icon` → `npm run dist` → переустановить `.app`.
+Порядок замены иконки: правим SVG → `npm run icon` → `npm run install:app`.
 PNG можно нарисовать и сразу в 1024×1024 (тогда шаг `npm run icon` не нужен),
 но SVG удобнее: одна правка — и все размеры пересобраны.
 
-> Если в SVG попал `<script>` (например, `mesh_polyfill` от инструмента, которым
-> рисовали) — на сборку он не влияет, Inkscape скрипты не выполняет. Но в файле
-> иконки он не нужен: это лишние килобайты и исполняемый код в ассете.
+> Иконка нарисована в Inkscape. Раньше в SVG ехал `<script id="mesh_polyfill">` —
+> полифил, который дорисовывал mesh-градиенты в браузерах (в Firefox и Chrome
+> иконка была видна именно благодаря ему). В файле иконки скрипт не нужен:
+> Inkscape понимает mesh нативно, скрипты не выполняет, а в ассете это лишний
+> исполняемый код. Удалён.
 
 ## Структура
 

@@ -12,7 +12,8 @@
     "build:renderer": "vite build --config renderer/vite.config.js",
     "dist": "npm run build:renderer && electron-builder --mac",
     "ketcher:dev": "npm --prefix ketcher/example run dev:standalone",
-    "icon": "node scripts/make-icon.mjs"
+    "icon": "node scripts/make-icon.mjs",
+    "install:app": "node scripts/install-app.mjs"
   },
   "build": {
     "appId": "com.moleculadesigner.ketcherdesktop",
