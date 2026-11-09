@@ -28,6 +28,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Нужны все теги и история: из них собираем список изменений для релиза.
+          fetch-depth: 0
 
       - name: Node.js
         uses: actions/setup-node@v4
@@ -78,6 +81,47 @@ jobs:
             release/*.zip
           if-no-files-found: error
 
+      - name: Текст релиза
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # Предыдущий тег, чтобы показать только новые коммиты.
+          # Для самого первого релиза тега нет — берём всю историю.
+          PREVIOUS=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+
+          if [ -n "$PREVIOUS" ]; then
+            RANGE="$PREVIOUS..HEAD"
+            HEADING="Что изменилось с $PREVIOUS"
+          else
+            RANGE="HEAD"
+            HEADING="Что изменилось"
+          fi
+
+          {
+            echo "## $HEADING"
+            echo
+            git log "$RANGE" --no-merges --pretty='- %s (%h)'
+            echo
+            echo "---"
+            echo
+            echo "## Установка"
+            echo
+            echo '1. Скачайте `.dmg` ниже и откройте его.'
+            echo '2. Перетащите **Ketcher Desktop** в папку «Программы».'
+            echo '3. Запустите из Launchpad.'
+            echo
+            echo 'Сборка **не подписана** (нет Apple Developer ID), поэтому Gatekeeper'
+            echo 'может сказать, что приложение повреждено. Это ожидаемо; лечится так:'
+            echo
+            echo '```sh'
+            echo 'xattr -dr com.apple.quarantine "/Applications/Ketcher Desktop.app"'
+            echo 'open -a "Ketcher Desktop"'
+            echo '```'
+            echo
+            echo 'Приложение работает офлайн: Ketcher и Indigo (WASM) внутри, сеть не нужна.'
+          } > release-notes.md
+
+          cat release-notes.md
+
       - name: Опубликовать релиз
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -85,19 +129,4 @@ jobs:
           files: |
             release/*.dmg
             release/*.zip
-          body: |
-            ## Установка
-
-            1. Скачайте `.dmg` ниже и откройте его.
-            2. Перетащите **Ketcher Desktop** в папку «Программы».
-            3. Запустите из Launchpad.
-
-            Сборка **не подписана** (нет Apple Developer ID), поэтому Gatekeeper
-            может сказать, что приложение повреждено. Это ожидаемо; лечится так:
-
-            ```sh
-            xattr -dr com.apple.quarantine "/Applications/Ketcher Desktop.app"
-            open -a "Ketcher Desktop"
-            ```
-
-            Приложение работает офлайн: Ketcher и Indigo (WASM) внутри, сеть не нужна.
+          body_path: release-notes.md
